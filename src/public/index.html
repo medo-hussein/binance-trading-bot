@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>FDUSD Trading Bot</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-chart-financial/dist/chartjs-chart-financial.min.js"></script>
+</head>
+<body>
+    <header>
+        <h1>FDUSD Trading Bot</h1>
+        <div id="serverStatus">Loading server status...</div>
+    </header>
+
+    <main>
+        <section class="card">
+            <h2>Create Bot</h2>
+            <form id="botForm">
+                <div class="row">
+                    <label>Name</label>
+                    <input type="text" name="name" placeholder="My Bot" required />
+                </div>
+                <div class="row">
+                    <label>Strategy</label>
+                    <select name="strategy" id="strategySelect">
+                        <option value="grid">Grid Trading</option>
+                        <option value="dca_buy">DCA Buy</option>
+                        <option value="dca_sell">DCA Sell</option>
+                    </select>
+                </div>
+                <div class="row">
+                    <label>Symbol</label>
+                    <input type="text" name="symbol" id="symbolInput" placeholder="BTCFDUSD" value="BTCFDUSD" required />
+                </div>
+                <div class="row" id="marketRow" style="display:flex; gap:12px; align-items:center;">
+                    <div>
+                        <strong>Current Price:</strong> <span id="currentPrice">-</span>
+                    </div>
+                    <div>
+                        <label style="display:flex; align-items:center; gap:6px;">
+                            <input type="checkbox" id="useStartPrice" />
+                            Use custom start price
+                        </label>
+                    </div>
+                    <div>
+                        <input type="number" id="startPriceInput" step="0.00001" placeholder="Start price" style="max-width:180px;" disabled />
+                    </div>
+                </div>
+                <div class="row" id="balanceRow">
+                    <strong>Account Balances:</strong>
+                    <span id="balancesInfo">-</span>
+                </div>
+                <div class="row">
+                    <label>Capital (Quote)</label>
+                    <input type="number" name="capital" id="capitalInput" step="0.01" placeholder="Use available quote balance or enter amount" />
+                </div>
+                <div class="row">
+                    <label>Grid Levels</label>
+                    <input type="number" name="gridLevels" id="gridLevelsInput" min="1" value="20" required />
+                </div>
+                <div class="row">
+                    <label>Grid Spread (FDUSD)</label>
+                    <input type="number" name="gridSpread" id="gridSpreadInput" step="0.00001" min="0.00001" max="500" value="10" required />
+                </div>
+                <div class="row">
+                    <label>Order Size (Quote)</label>
+                    <input type="number" name="orderSize" id="orderSizeInput" step="0.0001" value="0.1" required />
+                </div>
+                <div class="row" id="takeProfitRow" style="display:none;">
+                    <label>Take Profit (FDUSD)</label>
+                    <input type="number" name="takeProfit" step="0.01" value="100" />
+                </div>
+                <div class="row gridOpt recenterOpt" style="display:none; align-items:center; gap:8px;">
+                    <label style="display:flex; align-items:center; gap:8px;">
+                        <input type="checkbox" name="recenterEnabled" />
+                        Repositioning (minutes)
+                    </label>
+                    <input type="number" name="recenterMinutes" min="1" value="10" />
+                </div>
+                <div class="row gridOpt" style="display:none; align-items:center; gap:8px;">
+                    <label style="display:flex; align-items:center; gap:8px;">
+                        <input type="checkbox" name="sellOnStopEnabled" />
+                        Sell on Stop (time window minutes)
+                    </label>
+                    <input type="number" name="sellOnStopMinutes" min="1" value="10" />
+                </div>
+
+                <div class="row">
+                    <button type="submit" id="createBtn">Create Bot</button>
+                    <span id="formHint" style="margin-left:8px; color:#c00; font-size:0.9em;"></span>
+                </div>
+            </form>
+            <div class="row">
+                <canvas id="priceChart" style="max-height: 200px;"></canvas>
+            </div>
+        </section>
+
+        <section class="card">
+            <h3>Preview</h3>
+            <div id="preview" style="display:grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap:8px;">
+                <div class="pv"><strong>Symbol</strong><div id="pvSymbol">-</div></div>
+                <div class="pv"><strong>Base/Quote</strong><div id="pvBQ">-</div></div>
+                <div class="pv"><strong>Effective Price</strong><div id="pvPrice">-</div></div>
+                <div class="pv"><strong>Levels</strong><div id="pvLevels">-</div></div>
+                <div class="pv"><strong>Order Size (Quote)</strong><div id="pvOrderSize">-</div></div>
+                <div class="pv"><strong>Spread (FDUSD)</strong><div id="pvSpread">-</div></div>
+                <div class="pv"><strong>Price Channel</strong><div id="pvChannel">-</div></div>
+                <div class="pv"><strong>Expected Profit / Round</strong><div id="pvProfit">-</div></div>
+                <div class="pv"><strong>Total Cost (All Buy Levels)</strong><div id="pvTotalCost">-</div></div>
+                <div class="pv"><strong>Capital</strong><div id="pvCapital">-</div></div>
+                <div class="pv"><strong>Affordable Levels (max)</strong><div id="pvMaxLevels">-</div></div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>Bots</h2>
+            <div id="bots"></div>
+        </section>
+
+        <section class="card">
+            <h2>Live Events</h2>
+            <div id="wsStatus">WS: connecting...</div>
+            <ul id="events"></ul>
+        </section>
+    </main>
+
+    <!-- 🎯 [إضافة SPA Container] - صفحة التفاصيل داخل نفس الـ HTML -->
+    <div id="botDetailsContainer" style="display: none;">
+        <div id="botDetailsContent">
+            <!-- محتوى التفاصيل بيتحمل هنا ديناميكياً -->
+        </div>
+    </div>
+
+    <div class="modal-backdrop" id="botDetailsBackdrop" style="display: none;"></div>
+    <div class="modal" id="botDetailsModal" style="display: none;">
+        <div class="modal-header">
+            <h2 id="modalTitle">Bot Details</h2>
+            <button id="modalCloseBtn">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="details-grid">
+                <div class="detail-item">
+                    <span>Total PNL</span>
+                    <strong id="detailTotalPnl">-</strong>
+                </div>
+                <div class="detail-item">
+                    <span>Realized PNL</span>
+                    <strong id="detailRealizedPnl">-</strong>
+                </div>
+                <div class="detail-item">
+                    <span>Floating PNL</span>
+                    <strong id="detailFloatingPnl">-</strong>
+                </div>
+                <div class="detail-item">
+                    <span>Total Held (Base)</span>
+                    <strong id="detailHeldQty">-</strong>
+                </div>
+                <div class="detail-item">
+                    <span>Avg. Buy Price</span>
+                    <strong id="detailAvgBuyPrice">-</strong>
+                </div>
+                <div class="detail-item">
+                    <span>Current Value</span>
+                    <strong id="detailCurrentValue">-</strong>
+                </div>
+            </div>
+            <hr/>
+            <h4>Open Orders</h4>
+            <div id="detailOpenOrders"></div>
+        </div>
+    </div>
+    <footer>
+        <small>Note: Use LIMIT_MAKER orders to leverage FDUSD maker fee benefits. Configure API keys in .env before trading.</small>
+    </footer>
+
+    <script src="/script.js"></script>
+</body>
+</html>
